@@ -1,0 +1,6 @@
+{
+  "name": "Portal Grupo Nixcon 4.0",
+  "description": "Um sistema SaaS multitenant para escritórios de contabilidade, facilitando a gestão de tarefas, documentos, e comunicação com clientes.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}
