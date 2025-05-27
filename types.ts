@@ -1,4 +1,3 @@
-
 import React from 'react';
 
 // Define as funções de usuário no sistema
@@ -199,12 +198,13 @@ export enum TipoDocumentoFiscal {
   NFSe = 'NFS-e', 
   NFCe = 'NFC-e', 
   ENTRADA = 'Nota de Entrada', // Adicionado para Escrita Fiscal
+  RECIBO = 'Recibo', // Adicionado
 }
 
 export enum StatusNotaFiscal {
   PENDENTE = 'Pendente',
   PROCESSANDO = 'Processando Emissão',
-  EMITIDA = 'Emitida', // Para NFe/NFCe/NFSe
+  EMITIDA = 'Emitida', // Para NFe/NFCe/NFSe/Recibo
   LANCADA = 'Lançada',   // Para Notas de Entrada (Escrita Fiscal)
   CANCELADA = 'Cancelada',
   ERRO = 'Erro na Emissão',
@@ -234,13 +234,13 @@ export interface ItemNotaFiscal {
   valorOutrasDespesasItem?: number; // Adicionado
 }
 
-export interface DestinatarioNota { // Usado para NF-e, NFS-e, NFC-e
+export interface DestinatarioNota { // Usado para NF-e, NFS-e, NFC-e, Recibo (como Recebedor)
   nomeRazaoSocial: string;
   cpfCnpj: string;
   inscricaoEstadual?: string;
   inscricaoMunicipal?: string;
   email?: string;
-  endereco: Endereco;
+  endereco: Endereco; // Para Recibo, pode ser opcional na UI, mas mantido na estrutura
   telefone?: string; 
 }
 
@@ -318,10 +318,10 @@ export interface NotaFiscal {
   dataEmissao: string; 
   dataEntradaSaida?: string; // Para notas de entrada ou data de saída efetiva
   dataAutorizacao?: string;
-  destinatario?: DestinatarioNota; // Opcional para Nota de Entrada
+  destinatario?: DestinatarioNota; // Opcional para Nota de Entrada, Usado para Recibo
   fornecedor?: FornecedorNota; // Específico para Nota de Entrada
   emitente?: EmitenteNota; // Se for nota emitida pelo sistema
-  itens: ItemNotaFiscal[];
+  itens: ItemNotaFiscal[]; // Para Recibo, pode ser vazio e usar informacoesAdicionais
   pagamentos?: PagamentoNota[]; 
   transportadora?: TransportadoraNota; 
   valorTotalProdutos?: number; 
@@ -332,9 +332,9 @@ export interface NotaFiscal {
   outrasDespesas?: number;
   valorTotalNota: number;
   status: StatusNotaFiscal;
-  naturezaOperacao?: string; // Mais genérico para NF-e/NFC-e, pode ser CFOP principal
+  naturezaOperacao?: string; // Mais genérico para NF-e/NFC-e, pode ser CFOP principal ou descrição para Recibo
   cfopPrincipal?: string; // Específico para Notas de Entrada/Saída
-  informacoesAdicionais?: string;
+  informacoesAdicionais?: string; // Usado para a descrição detalhada do Recibo
   xml?: string; 
   pdfUrl?: string; 
   mensagensErro?: string[]; 
@@ -343,6 +343,7 @@ export interface NotaFiscal {
   urlConsultaApi?: string; 
   tipoEmpresaSimulacao?: TipoEmpresaSimulacao; 
   tenantId: string; 
+  localEmissao?: string; // Adicionado para Recibo
 }
 
 export type PrioridadeTarefa = 'ALTA' | 'MEDIA' | 'BAIXA';
@@ -969,4 +970,121 @@ export interface CnaeInfo {
   permiteMei?: boolean;
   observacoes?: string; // Para alíquotas, detalhes específicos, etc.
   tenantId: string; // "global" ou ID do escritório para customizações
+}
+
+// Módulo Folha de Pagamento
+export interface DadosBancarios {
+  banco: string; // Código ou nome do banco
+  agencia: string;
+  contaCorrente: string;
+  tipoConta: 'CORRENTE' | 'POUPANCA' | 'SALARIO';
+  pix?: string;
+}
+
+export interface Dependente {
+  id: string;
+  nome: string;
+  dataNascimento: string; // ISO Date
+  parentesco: string; // Ex: Filho(a), Cônjuge
+  cpf?: string;
+  paraIRRF: boolean;
+  paraSalarioFamilia: boolean;
+}
+
+export interface ColaboradorFolha {
+  id: string;
+  nomeCompleto: string;
+  cpf: string;
+  rg?: string;
+  dataNascimento: string; // ISO Date
+  dataAdmissao: string; // ISO Date
+  dataDemissao?: string; // ISO Date
+  cargo: string;
+  salarioBase: number;
+  departamento?: string;
+  centroCusto?: string;
+  endereco: Endereco; // Reutiliza Endereco
+  dadosBancarios?: DadosBancarios;
+  dependentes?: Dependente[];
+  emailProfissional?: string;
+  telefoneContato?: string;
+  ativo: boolean; // Se está atualmente empregado
+  tenantId: string; // ID da empresa cliente ou escritório
+  matriculaESocial?: string;
+  categoriaTrabalhadorESocial?: string; // Código da tabela 1 do eSocial
+}
+
+// Módulo Auditoria
+export enum TipoAcaoAuditoria {
+  CRIACAO = 'CRIACAO',
+  ATUALIZACAO = 'ATUALIZACAO',
+  EXCLUSAO = 'EXCLUSAO',
+  LOGIN_SUCESSO = 'LOGIN_SUCESSO',
+  LOGIN_FALHA = 'LOGIN_FALHA',
+  LOGOUT = 'LOGOUT',
+  VISUALIZACAO = 'VISUALIZACAO',
+  DOWNLOAD = 'DOWNLOAD',
+  UPLOAD = 'UPLOAD',
+  CONFIG_ALTERADA = 'CONFIG_ALTERADA',
+  PERSONIFICACAO_INICIO = 'PERSONIFICACAO_INICIO',
+  PERSONIFICACAO_FIM = 'PERSONIFICACAO_FIM',
+  CONTEXTO_CLIENTE_TROCA = 'CONTEXTO_CLIENTE_TROCA',
+  ACESSO_NAO_AUTORIZADO = 'ACESSO_NAO_AUTORIZADO'
+}
+
+export enum ModuloSistemaAuditavel {
+  TAREFAS = 'TAREFAS',
+  DOCUMENTOS_GERAIS = 'DOCUMENTOS_GERAIS',
+  DOCUMENTOS_MODELOS = 'DOCUMENTOS_MODELOS',
+  DOCUMENTOS_GERADOS = 'DOCUMENTOS_GERADOS',
+  EMPRESAS_CLIENTES = 'EMPRESAS_CLIENTES',
+  USUARIOS_ESCRITORIO = 'USUARIOS_ESCRITORIO',
+  USUARIOS_CLIENTE = 'USUARIOS_CLIENTE',
+  CONFIGURACOES_EMISSOR_ESCRITORIO = 'CONFIGURACOES_EMISSOR_ESCRITORIO',
+  CONFIGURACOES_EMISSOR_CLIENTE = 'CONFIGURACOES_EMISSOR_CLIENTE',
+  CONFIGURACOES_GERAIS_PLATAFORMA = 'CONFIGURACOES_GERAIS_PLATAFORMA',
+  CONFIGURACOES_MODULOS_PLATAFORMA = 'CONFIGURACOES_MODULOS_PLATAFORMA',
+  CONFIGURACOES_VISUAIS_PLATAFORMA = 'CONFIGURACOES_VISUAIS_PLATAFORMA',
+  AUTENTICACAO = 'AUTENTICACAO', // Para login, logout
+  HONORARIOS = 'HONORARIOS',
+  CONTABILIDADE_PLANO_CONTAS = 'CONTABILIDADE_PLANO_CONTAS',
+  CONTABILIDADE_LANCAMENTOS = 'CONTABILIDADE_LANCAMENTOS',
+  ESTOQUE_PRODUTOS = 'ESTOQUE_PRODUTOS',
+  ESTOQUE_MOVIMENTACOES = 'ESTOQUE_MOVIMENTACOES',
+  NOTAS_FISCAIS = 'NOTAS_FISCAIS',
+  ASSINATURAS_ELETRONICAS = 'ASSINATURAS_ELETRONICAS',
+  CALENDARIO_EVENTOS = 'CALENDARIO_EVENTOS',
+  COMUNICACOES_CANAIS = 'COMUNICACOES_CANAIS',
+  COMUNICACOES_MENSAGENS = 'COMUNICACOES_MENSAGENS',
+  SIMULACAO_IMPOSTOS = 'SIMULACAO_IMPOSTOS',
+  CADASTRO_CNAES = 'CADASTRO_CNAES',
+  CONCILIADOR_BANCARIO = 'CONCILIADOR_BANCARIO',
+  EFD_CONTRIBUICOES = 'EFD_CONTRIBUICOES',
+  INTEGRACOES = 'INTEGRACOES', // Adicionado
+  OUTRO = 'OUTRO'
+}
+
+export interface LogAuditoria {
+  id: string;
+  timestamp: string; // ISO Date String
+  usuarioId?: string; 
+  usuarioNome?: string; // Nome do usuário que realizou a ação
+  usuarioEmail?: string; // Email para facilitar a busca
+  acao: TipoAcaoAuditoria;
+  modulo?: ModuloSistemaAuditavel;
+  entidadeId?: string; // ID do objeto afetado (ex: ID da tarefa, ID do documento)
+  descricao: string; // Resumo da ação. Ex: "Tarefa 'Revisar Balanço' criada"
+  dadosAntigos?: string; // JSON stringified
+  dadosNovos?: string;   // JSON stringified
+  ipOrigem?: string;
+  tenantId: string; // ID do escritório ao qual o log pertence
+  contextoEmpresaClienteId?: string; // Se a ação foi feita no contexto de uma empresa cliente específica
+  contextoEmpresaClienteNome?: string;
+}
+
+// Módulo de Integrações
+export enum TipoIntegracao {
+  INTEGRA_NOTAS = 'IntegraNotas',
+  WHATSAPP_EVOLUTION = 'WhatsAppEvolution',
+  WHATSAPP_META = 'WhatsAppMeta',
 }

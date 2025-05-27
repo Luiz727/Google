@@ -15,9 +15,11 @@ const inputClasses = "mt-1 block w-full px-3 py-2 border border-gray-300 dark:bo
 const selectClasses = `${inputClasses} bg-white dark:bg-gray-700`;
 const checkboxLabelClasses = "ml-2 block text-sm text-gray-700 dark:text-gray-300";
 
+type AbaContabilidade = 'planoContas' | 'lancamentos' | 'relatorios' | 'configuracoes';
+
 const ContabilidadePage: React.FC = () => {
   const { usuarioAtual, tenantAtual } = useAuth();
-  const [abaAtiva, setAbaAtiva] = useState<'planoContas' | 'lancamentos' | 'relatorios' | 'configuracoes'>('planoContas');
+  const [abaAtiva, setAbaAtiva] = useState<AbaContabilidade>('planoContas');
   
   const [planoDeContas, setPlanoDeContas] = useState<ContaContabil[]>([]);
   const [modalContaAberto, setModalContaAberto] = useState(false);
@@ -38,7 +40,7 @@ const ContabilidadePage: React.FC = () => {
           { id: '1', codigo: '1', descricao: 'ATIVO', tipo: 'SINTETICA', natureza: 'DEVEDORA', grupo: 'ATIVO', nivel: 1, permiteLancamentos: false, tenantId: tenantIdEscritorio, dataCriacao: agora, dataAtualizacao: agora },
           { id: '1.1', codigo: '1.1', descricao: 'ATIVO CIRCULANTE', tipo: 'SINTETICA', natureza: 'DEVEDORA', grupo: 'ATIVO', nivel: 2, contaPaiId: '1', permiteLancamentos: false, tenantId: tenantIdEscritorio, dataCriacao: agora, dataAtualizacao: agora },
           { id: '1.1.01', codigo: '1.1.01', descricao: 'DISPONIBILIDADES', tipo: 'SINTETICA', natureza: 'DEVEDORA', grupo: 'ATIVO CIRCULANTE', nivel: 3, contaPaiId: '1.1', permiteLancamentos: false, tenantId: tenantIdEscritorio, dataCriacao: agora, dataAtualizacao: agora },
-          { id: '1.1.01.001', codigo: '1.1.01.001', descricao: 'CAIXA GERAL', tipo: 'ANALITICA', natureza: 'DEVEDORA', grupo: 'DISPONIBILIDADES', nivel: 4, contaPaiId: '1.1.01', permiteLancamentos: true, tenantId: tenantIdEscritorio, dataCriacao: agora, dataAtualizacao: agora },
+          { id: '1.1.01.001', codigo: '1.1.01.001', codigoReduzido: '1001', descricao: 'CAIXA GERAL', tipo: 'ANALITICA', natureza: 'DEVEDORA', grupo: 'DISPONIBILIDADES', nivel: 4, contaPaiId: '1.1.01', permiteLancamentos: true, tenantId: tenantIdEscritorio, dataCriacao: agora, dataAtualizacao: agora },
           { id: '2', codigo: '2', descricao: 'PASSIVO', tipo: 'SINTETICA', natureza: 'CREDORA', grupo: 'PASSIVO', nivel: 1, permiteLancamentos: false, tenantId: tenantIdEscritorio, dataCriacao: agora, dataAtualizacao: agora },
         ];
         setPlanoDeContas(planoMock);
@@ -47,7 +49,7 @@ const ContabilidadePage: React.FC = () => {
   }, [tenantIdEscritorio]);
 
   useEffect(() => {
-    if (tenantIdEscritorio && planoDeContas.length > 0) { 
+    if (tenantIdEscritorio && planoDeContas.length >= 0) { 
       localStorage.setItem(`${STORAGE_KEY_PLANO_CONTAS_PREFIX}${tenantIdEscritorio}`, JSON.stringify(planoDeContas));
     }
   }, [planoDeContas, tenantIdEscritorio]);
@@ -68,12 +70,11 @@ const ContabilidadePage: React.FC = () => {
         finalValue = checked;
       } else if (name === 'nivel') {
         finalValue = parseInt(value, 10);
-        if (isNaN(finalValue as number)) finalValue = 1; // Default to 1 if not a number
+        if (isNaN(finalValue as number) || finalValue < 1) finalValue = 1; 
       }
   
       const newState = { ...prev, [name]: finalValue };
   
-      // Se tipo muda para Sintética, desabilita e desmarca permiteLancamentos
       if (name === 'tipo' && value === 'SINTETICA') {
         newState.permiteLancamentos = false;
       }
@@ -129,7 +130,8 @@ const ContabilidadePage: React.FC = () => {
     const filtroLower = filtroDescricaoConta.toLowerCase();
     return contasOrdenadas.filter(c => 
         c.descricao.toLowerCase().includes(filtroLower) || 
-        c.codigo.toLowerCase().includes(filtroLower)
+        c.codigo.toLowerCase().includes(filtroLower) ||
+        (c.codigoReduzido && c.codigoReduzido.toLowerCase().includes(filtroLower))
     );
   }, [planoDeContas, filtroDescricaoConta]);
   
@@ -168,7 +170,7 @@ const ContabilidadePage: React.FC = () => {
                 </thead>
                 <tbody className="bg-white dark:bg-nixcon-dark-card divide-y divide-gray-200 dark:divide-gray-700">
                   {contasFiltradasParaRenderizar.map(conta => (
-                    <tr key={conta.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                    <tr key={conta.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${conta.tipo === 'SINTETICA' ? 'font-semibold text-gray-700 dark:text-gray-300' : ''}`}>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400" style={{ paddingLeft: `${getIndentacao(conta.codigo) + 1}rem` }}>{conta.codigo}</td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-nixcon-charcoal dark:text-nixcon-light">{conta.descricao}</td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{conta.tipo}</td>
@@ -189,11 +191,11 @@ const ContabilidadePage: React.FC = () => {
           </Card>
         );
       case 'lancamentos':
-        return <Card className="shadow-lg dark:bg-nixcon-dark-card"><p className="text-gray-600 dark:text-gray-400">Funcionalidade de Lançamentos Contábeis será implementada aqui.</p></Card>;
+        return <Card className="shadow-lg dark:bg-nixcon-dark-card"><p className="text-gray-600 dark:text-gray-400">Funcionalidade de Lançamentos Contábeis será implementada aqui (Partidas Simples e Múltiplas, Histórico Padrão, Conciliação, etc.).</p></Card>;
       case 'relatorios':
-        return <Card className="shadow-lg dark:bg-nixcon-dark-card"><p className="text-gray-600 dark:text-gray-400">Geração de Relatórios Contábeis (Balancete, DRE, Balanço) será implementada aqui.</p></Card>;
+        return <Card className="shadow-lg dark:bg-nixcon-dark-card"><p className="text-gray-600 dark:text-gray-400">Geração de Relatórios Contábeis (Balancete, DRE, Balanço Patrimonial, Livro Diário, Razão Analítico) será implementada aqui.</p></Card>;
       case 'configuracoes':
-        return <Card className="shadow-lg dark:bg-nixcon-dark-card"><p className="text-gray-600 dark:text-gray-400">Configurações específicas do módulo Contabilidade (ex: histórico padrão, centros de custo) serão implementadas aqui.</p></Card>;
+        return <Card className="shadow-lg dark:bg-nixcon-dark-card"><p className="text-gray-600 dark:text-gray-400">Configurações específicas do módulo Contabilidade (ex: definição de histórico padrão, centros de custo, configuração de encerramento) serão implementadas aqui.</p></Card>;
       default:
         return null;
     }

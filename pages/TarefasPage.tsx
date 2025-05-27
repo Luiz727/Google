@@ -3,21 +3,16 @@ import React, { useState, useEffect, useMemo, ChangeEvent, FormEvent } from 'rea
 import Card from '../components/common/Card';
 import Button from '../components/common/Button';
 import Modal from '../components/common/Modal';
-import { IconeTarefas, IconeFiscal, IconeDocumentos, IconeEmpresa, IconeLixeira, IconeLink } from '../components/common/Icons'; 
-import { 
+import { IconeTarefas, IconeFiscal, IconeDocumentos, IconeEmpresa, IconeLixeira, IconeLink } from '../components/common/Icons';
+import {
     Tarefa, PrioridadeTarefa, StatusTarefa, Usuario, FuncaoUsuario, Empresa,
-    RecorrenciaConfig, DocumentoVinculado, TiposRecorrencia, DIAS_SEMANA_MAP, MESES_MAP, Documento
+    RecorrenciaConfig, DocumentoVinculado, TiposRecorrencia, DIAS_SEMANA_MAP, MESES_MAP, Documento,
+    TipoAcaoAuditoria, ModuloSistemaAuditavel
 } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-// A importação direta do GoogleGenAI não será mais usada nesta página para esta funcionalidade específica.
-// Se outras funcionalidades na página precisarem, ela pode permanecer.
-// import { GoogleGenAI } from "@google/genai"; 
-import { STORAGE_KEY_DOCUMENTOS_PREFIX } from './DocumentosPage'; 
-
-// Defina a URL do seu backend aqui ou importe de constants.ts
-// Se você adicionou em constants.ts, use: import { BACKEND_BASE_URL } from '../constants';
-const BACKEND_BASE_URL = "https://us-east1-docker.pkg.dev/portal-nixcon/nixcon-backend-repo";
-
+import { logAction } from '../services/LogService';
+import { STORAGE_KEY_DOCUMENTOS_PREFIX } from './DocumentosPage';
+import { GoogleGenerativeAI, GenerateContentResponse } from "@google/genai"; // Updated import
 
 const usuariosMock: Pick<Usuario, 'id' | 'nome'>[] = [
   { id: 'user-ana', nome: 'Ana Silva (Escritório)' },
@@ -26,22 +21,32 @@ const usuariosMock: Pick<Usuario, 'id' | 'nome'>[] = [
   { id: 'user-carlos-cli', nome: 'Carlos Pereira (Cliente XYZ)' },
 ];
 
-export const STORAGE_KEY_TAREFAS = 'nixconPortalTarefas'; 
-const STORAGE_KEY_PREFIX_EMPRESAS = 'nixconPortalEmpresas_'; 
+export const STORAGE_KEY_TAREFAS = 'nixconPortalTarefas';
+const STORAGE_KEY_PREFIX_EMPRESAS = 'nixconPortalEmpresas_';
 
 const inputBaseClasses = "px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-nixcon-gold focus:border-nixcon-gold sm:text-sm";
 const inputStyles = `${inputBaseClasses} bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:placeholder-gray-400`;
 const selectStyles = `${inputBaseClasses} bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200`;
 const checkboxLabelStyles = "ml-2 block text-sm text-gray-700 dark:text-gray-300";
 
+// Initialize Gemini API
+const API_KEY = process.env.API_KEY;
+let genAI: GoogleGenerativeAI | null = null; // Updated type and variable name
+if (API_KEY) {
+  genAI = new GoogleGenerativeAI({ apiKey: API_KEY }); // Updated instantiation
+} else {
+  console.warn("API Key for Gemini not found. AI features will be limited.");
+}
+
 const TarefasPage: React.FC = () => {
-  const { usuarioAtual, tenantAtual, personificandoInfo, activeClientCompanyContext } = useAuth(); 
+  const { usuarioAtual, tenantAtual, personificandoInfo, activeClientCompanyContext } = useAuth();
   const [tarefas, setTarefas] = useState<Tarefa[]>([]);
   const [empresasClientes, setEmpresasClientes] = useState<Empresa[]>([]);
   const [modalTarefaAberto, setModalTarefaAberto] = useState(false);
   const [tarefaEditando, setTarefaEditando] = useState<Partial<Tarefa> | null>(null);
+  const [tarefaOriginalParaLog, setTarefaOriginalParaLog] = useState<Tarefa | null>(null);
   const [sugerindoDescricao, setSugerindoDescricao] = useState(false);
-  
+
   const [documentosDoTenantParaSelecao, setDocumentosDoTenantParaSelecao] = useState<Documento[]>([]);
   const [modalSelecionarDocumentoAberto, setModalSelecionarDocumentoAberto] = useState(false);
   const [documentosSelecionadosTemporariamente, setDocumentosSelecionadosTemporariamente] = useState<string[]>([]);
@@ -61,17 +66,18 @@ const TarefasPage: React.FC = () => {
     if (activeClientCompanyContext && (usuarioAtual?.funcao === FuncaoUsuario.ADMIN_ESCRITORIO || usuarioAtual?.funcao === FuncaoUsuario.SUPERADMIN)) {
         return activeClientCompanyContext.id;
     }
-    return usuarioAtual?.tenantId || tenantAtual?.id; 
+    return usuarioAtual?.tenantId || tenantAtual?.id;
   };
-  
+
   const effectiveTenantId = useMemo(getEffectiveTenantId, [personificandoInfo, usuarioAtual, activeClientCompanyContext, tenantAtual]);
+  const tenantIdEscritorio = useMemo(() => tenantAtual?.id, [tenantAtual]);
 
   useEffect(() => {
     const tarefasSalvas = localStorage.getItem(STORAGE_KEY_TAREFAS);
     if (tarefasSalvas) {
       setTarefas(JSON.parse(tarefasSalvas));
     }
-    if (tenantAtual) { 
+    if (tenantAtual) {
       const storageKeyEmpresas = `${STORAGE_KEY_PREFIX_EMPRESAS}${tenantAtual.id}`;
       const empresasSalvas = localStorage.getItem(storageKeyEmpresas);
       if (empresasSalvas) {
@@ -83,7 +89,7 @@ const TarefasPage: React.FC = () => {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_TAREFAS, JSON.stringify(tarefas));
   }, [tarefas]);
-  
+
   const podeGerenciarRecorrenciaEClientes = useMemo(() => {
     return (usuarioAtual?.funcao === FuncaoUsuario.ADMIN_ESCRITORIO || usuarioAtual?.funcao === FuncaoUsuario.SUPERADMIN) && !personificandoInfo && !activeClientCompanyContext;
   }, [usuarioAtual, personificandoInfo, activeClientCompanyContext]);
@@ -93,16 +99,16 @@ const TarefasPage: React.FC = () => {
     let clienteIdPreSelecionado: string | undefined = undefined;
     let clienteNomePreSelecionado: string | undefined = undefined;
 
-    if (activeClientCompanyContext && !tarefa?.id) { 
-        tenantIdAtualVisualizado = tenantAtual?.id; 
+    if (activeClientCompanyContext && !tarefa?.id) {
+        tenantIdAtualVisualizado = tenantAtual?.id;
         clienteIdPreSelecionado = activeClientCompanyContext.id;
         clienteNomePreSelecionado = activeClientCompanyContext.nome;
-    } else if (tarefa?.clienteEmpresaId && tenantAtual) { 
-        tenantIdAtualVisualizado = tenantAtual.id; 
+    } else if (tarefa?.clienteEmpresaId && tenantAtual) {
+        tenantIdAtualVisualizado = tenantAtual.id;
         clienteIdPreSelecionado = tarefa.clienteEmpresaId;
         clienteNomePreSelecionado = tarefa.clienteEmpresaNome;
     } else if (!tarefa?.id && !activeClientCompanyContext && (usuarioAtual?.funcao === FuncaoUsuario.ADMIN_CLIENTE || usuarioAtual?.funcao === FuncaoUsuario.USUARIO_CLIENTE || usuarioAtual?.funcao === FuncaoUsuario.USUARIO_EXTERNO_CLIENTE)) {
-      tenantIdAtualVisualizado = usuarioAtual.tenantId; 
+      tenantIdAtualVisualizado = usuarioAtual.tenantId;
     }
 
     const tenantParaDocumentos = tarefa?.clienteEmpresaId || activeClientCompanyContext?.id || effectiveTenantId;
@@ -115,18 +121,20 @@ const TarefasPage: React.FC = () => {
     }
 
     if (tarefa) {
-      setTarefaEditando({ 
+      setTarefaOriginalParaLog({ ...tarefa });
+      setTarefaEditando({
         ...tarefa,
         recorrencia: tarefa.recorrencia ? {...tarefa.recorrencia} : undefined,
         documentosVinculados: tarefa.documentosVinculados ? [...tarefa.documentosVinculados.map(d => ({...d}))] : []
       });
     } else {
+      setTarefaOriginalParaLog(null);
       setTarefaEditando({
         titulo: '',
         descricao: '',
         prioridade: 'MEDIA',
         status: 'PENDENTE',
-        prazo: new Date().toISOString().split('T')[0], 
+        prazo: new Date().toISOString().split('T')[0],
         tenantId: tenantIdAtualVisualizado,
         clienteEmpresaId: clienteIdPreSelecionado,
         clienteEmpresaNome: clienteNomePreSelecionado,
@@ -140,6 +148,7 @@ const TarefasPage: React.FC = () => {
   const handleFecharModalTarefa = () => {
     setModalTarefaAberto(false);
     setTarefaEditando(null);
+    setTarefaOriginalParaLog(null);
     setSugerindoDescricao(false);
     setModalSelecionarDocumentoAberto(false);
     setDocumentosSelecionadosTemporariamente([]);
@@ -148,7 +157,7 @@ const TarefasPage: React.FC = () => {
   const handleChangeTarefaEditando = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
     const checked = type === 'checkbox' ? (e.target as HTMLInputElement).checked : undefined;
-    
+
     setTarefaEditando(prev => {
       if (!prev) return null;
       if (name.startsWith("recorrencia.")) {
@@ -160,10 +169,10 @@ const TarefasPage: React.FC = () => {
             const num = parseInt(value, 10);
             processedValue = isNaN(num) ? undefined : num;
         }
-        
-        const novaRecorrencia = { 
-            ...(prev.recorrencia || { tipo: TiposRecorrencia.MENSAL, intervalo: 1 }), 
-            [campoRecorrencia]: processedValue 
+
+        const novaRecorrencia = {
+            ...(prev.recorrencia || { tipo: TiposRecorrencia.MENSAL, intervalo: 1 }),
+            [campoRecorrencia]: processedValue
         };
 
         if (campoRecorrencia === 'tipo' && processedValue === TiposRecorrencia.DIARIA) {
@@ -188,7 +197,7 @@ const TarefasPage: React.FC = () => {
       if (isChecked) {
         return { ...prev, recorrencia: prev.recorrencia || { tipo: TiposRecorrencia.MENSAL, diaDoMes: 1, intervalo: 1 } };
       } else {
-        const { recorrencia, ...resto } = prev; 
+        const { recorrencia, ...resto } = prev;
         return resto;
       }
     });
@@ -208,7 +217,7 @@ const TarefasPage: React.FC = () => {
   };
 
   const handleToggleDocumentoSelecionado = (docId: string) => {
-    setDocumentosSelecionadosTemporariamente(prev => 
+    setDocumentosSelecionadosTemporariamente(prev =>
       prev.includes(docId) ? prev.filter(id => id !== docId) : [...prev, docId]
     );
   };
@@ -217,7 +226,7 @@ const TarefasPage: React.FC = () => {
     const novosDocumentosVinculados: DocumentoVinculado[] = documentosSelecionadosTemporariamente.map(docId => {
       const docOriginal = documentosDoTenantParaSelecao.find(d => d.id === docId);
       return {
-        id: docOriginal?.id || docId, 
+        id: docOriginal?.id || docId,
         nome: docOriginal?.nome || 'Documento não encontrado',
       };
     });
@@ -234,7 +243,7 @@ const TarefasPage: React.FC = () => {
       };
     });
   };
-  
+
   const handleAbrirDetalhesDocVinculado = (docVinculado: DocumentoVinculado) => {
     const tenantIdDoDocumento = tarefaEditando?.clienteEmpresaId || activeClientCompanyContext?.id || effectiveTenantId;
     if (!tenantIdDoDocumento) {
@@ -256,11 +265,11 @@ const TarefasPage: React.FC = () => {
 
   const handleSalvarTarefa = (e: FormEvent) => {
     e.preventDefault();
-    if (!tarefaEditando || !tarefaEditando.titulo || !usuarioAtual) {
-      alert("Título da tarefa é obrigatório.");
+    if (!tarefaEditando || !tarefaEditando.titulo || !usuarioAtual || !tenantIdEscritorio) {
+      alert("Título da tarefa é obrigatório e contexto de usuário/tenant deve estar presente.");
       return;
     }
-    
+
     let tenantIdDaTarefa = tarefaEditando.tenantId || effectiveTenantId;
     if (!tenantIdDaTarefa) {
         alert("Não foi possível determinar o tenant para esta tarefa.");
@@ -269,13 +278,21 @@ const TarefasPage: React.FC = () => {
 
     const responsavelSelecionado = usuariosMock.find(u => u.id === tarefaEditando.responsavelId);
 
-    if (tarefaEditando.id) { 
-      setTarefas(tarefas.map(t => 
-        t.id === tarefaEditando!.id 
-        ? { ...t, ...tarefaEditando as Tarefa, tenantId: tenantIdDaTarefa, responsavelNome: responsavelSelecionado?.nome } 
-        : t
-      ));
-    } else { 
+    const logTenantId = tenantIdEscritorio;
+    const logContextoEmpresaId = tarefaEditando.clienteEmpresaId || activeClientCompanyContext?.id || (personificandoInfo ? personificandoInfo.empresaId : undefined);
+    const logContextoEmpresaNome = tarefaEditando.clienteEmpresaNome || activeClientCompanyContext?.nome || (personificandoInfo ? personificandoInfo.empresaNome : undefined);
+
+    if (tarefaEditando.id) {
+      const tarefaAtualizada = { ...tarefaOriginalParaLog, ...tarefaEditando as Tarefa, tenantId: tenantIdDaTarefa, responsavelNome: responsavelSelecionado?.nome };
+      setTarefas(tarefas.map(t => t.id === tarefaEditando!.id ? tarefaAtualizada : t));
+      logAction({
+        acao: TipoAcaoAuditoria.ATUALIZACAO, modulo: ModuloSistemaAuditavel.TAREFAS,
+        descricao: `Tarefa "${tarefaAtualizada.titulo}" atualizada.`,
+        tenantId: logTenantId, usuario: usuarioAtual, entidadeId: tarefaAtualizada.id,
+        dadosAntigos: tarefaOriginalParaLog, dadosNovos: tarefaAtualizada,
+        contextoEmpresaClienteId: logContextoEmpresaId, contextoEmpresaClienteNome: logContextoEmpresaNome,
+      });
+    } else {
       const novaTarefa: Tarefa = {
         id: `task-${Date.now()}`,
         titulo: tarefaEditando.titulo,
@@ -295,13 +312,30 @@ const TarefasPage: React.FC = () => {
         documentosVinculados: tarefaEditando.documentosVinculados,
       };
       setTarefas(prevTarefas => [novaTarefa, ...prevTarefas]);
+      logAction({
+        acao: TipoAcaoAuditoria.CRIACAO, modulo: ModuloSistemaAuditavel.TAREFAS,
+        descricao: `Tarefa "${novaTarefa.titulo}" criada.`,
+        tenantId: logTenantId, usuario: usuarioAtual, entidadeId: novaTarefa.id,
+        dadosNovos: novaTarefa,
+        contextoEmpresaClienteId: logContextoEmpresaId, contextoEmpresaClienteNome: logContextoEmpresaNome,
+      });
     }
     handleFecharModalTarefa();
   };
 
   const handleExcluirTarefa = (idTarefa: string) => {
     if (window.confirm("Tem certeza que deseja excluir esta tarefa?")) {
+      const tarefaExcluida = tarefas.find(t => t.id === idTarefa);
       setTarefas(tarefas.filter(t => t.id !== idTarefa));
+      if (tarefaExcluida && tenantIdEscritorio && usuarioAtual) {
+        logAction({
+            acao: TipoAcaoAuditoria.EXCLUSAO, modulo: ModuloSistemaAuditavel.TAREFAS,
+            descricao: `Tarefa "${tarefaExcluida.titulo}" excluída.`,
+            tenantId: tenantIdEscritorio, usuario: usuarioAtual, entidadeId: idTarefa,
+            dadosAntigos: tarefaExcluida,
+            contextoEmpresaClienteId: tarefaExcluida.clienteEmpresaId, contextoEmpresaClienteNome: tarefaExcluida.clienteEmpresaNome,
+          });
+      }
     }
   };
 
@@ -310,33 +344,29 @@ const TarefasPage: React.FC = () => {
       alert("Por favor, insira um título para a tarefa primeiro.");
       return;
     }
+    if (!genAI) { // Use genAI here
+      alert("A funcionalidade de IA não está disponível. Verifique a configuração da API Key.");
+      return;
+    }
+
     setSugerindoDescricao(true);
     try {
-      const prompt = `Crie uma descrição detalhada e profissional para a seguinte tarefa contábil: "${tarefaEditando.titulo}". Inclua os principais passos ou considerações importantes. Formate em itens se apropriado.`;
-      
-      // Chamada para o backend
-      const response = await fetch(`${BACKEND_BASE_URL}/api/sugerir-descricao-tarefa`, { 
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // Se seu backend precisar de autenticação, adicione o token aqui:
-          // 'Authorization': `Bearer SEU_TOKEN_DE_AUTENTICACAO_DO_FRONTEND`, 
-        },
-        body: JSON.stringify({ prompt: prompt }), // Ou apenas { titulo: tarefaEditando.titulo } se o backend montar o prompt
-      });
+      const prompt = `Crie uma descrição detalhada para uma tarefa contábil com o título: "${tarefaEditando.titulo}". A descrição deve ser útil para um profissional de contabilidade e incluir sugestões de pontos-chave a considerar para a execução completa da tarefa, como documentos necessários, prazos típicos (se aplicável), e principais verificações a serem feitas. Formate a resposta de forma clara e organizada, usando tópicos se apropriado.`;
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || `Erro do backend: ${response.statusText}`);
-      }
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-preview-04-17" });
+      const result = await model.generateContent(prompt);
+      const genResponse = result.response; // GenerateContentResponse
 
-      const data = await response.json();
-      const textoGerado = data.sugestao; // Supondo que o backend retorna { sugestao: "..." }
+      const suggestedDescription = genResponse.text;
+      setTarefaEditando(prev => prev ? { ...prev, descricao: suggestedDescription } : null);
 
-      setTarefaEditando(prev => prev ? { ...prev, descricao: textoGerado } : null);
     } catch (error) {
-      console.error("Erro ao sugerir descrição via backend:", error);
-      alert(`Ocorreu um erro ao tentar sugerir a descrição: ${error instanceof Error ? error.message : "Erro desconhecido"}. Verifique o console para mais detalhes.`);
+      console.error("Erro ao gerar descrição com IA:", error);
+      let errorMessage = "Falha ao sugerir descrição. Tente novamente.";
+       if (error instanceof Error) {
+        errorMessage += ` Detalhe: ${error.message}`;
+      }
+      alert(errorMessage);
     } finally {
       setSugerindoDescricao(false);
     }
@@ -360,7 +390,7 @@ const TarefasPage: React.FC = () => {
       default: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
     }
   };
-  
+
   const formatarData = (isoString?: string) => {
     if (!isoString) return '-';
     const data = new Date(isoString);
@@ -381,11 +411,11 @@ const TarefasPage: React.FC = () => {
 
   const tarefasFiltradas = useMemo(() => {
     return tarefas
-      .filter(t => t.tenantId === effectiveTenantId) 
+      .filter(t => t.tenantId === effectiveTenantId)
       .filter(t => filtroResponsavelId ? t.responsavelId === filtroResponsavelId : true)
       .filter(t => filtroPrioridade ? t.prioridade === filtroPrioridade : true)
       .filter(t => filtroStatus ? t.status === filtroStatus : true)
-      .filter(t => { 
+      .filter(t => {
           if (podeGerenciarRecorrenciaEClientes && filtroClienteEmpresaId) {
               return t.clienteEmpresaId === filtroClienteEmpresaId;
           }
@@ -402,7 +432,7 @@ const TarefasPage: React.FC = () => {
         </h1>
         <Button onClick={() => handleAbrirModalTarefa()}>Nova Tarefa</Button>
       </div>
-      
+
       <Card className="shadow-lg dark:bg-nixcon-dark-card">
         <h2 className="text-xl font-semibold text-nixcon-dark dark:text-nixcon-light mb-4">Filtros</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -423,7 +453,7 @@ const TarefasPage: React.FC = () => {
             <option value="CONCLUIDA">Concluída</option>
             <option value="CANCELADA">Cancelada</option>
           </select>
-           {podeGerenciarRecorrenciaEClientes && ( 
+           {podeGerenciarRecorrenciaEClientes && (
                 <select value={filtroClienteEmpresaId} onChange={e => setFiltroClienteEmpresaId(e.target.value)} className={selectStyles}>
                     <option value="">Todas Empresas Clientes</option>
                     {empresasClientes.map(emp => <option key={emp.id} value={emp.id}>{emp.nome}</option>)}
@@ -499,20 +529,20 @@ const TarefasPage: React.FC = () => {
             <div>
               <div className="flex justify-between items-center">
                 <label htmlFor="descricao" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Descrição</label>
-                <Button 
-                  type="button" 
-                  onClick={handleSugerirDescricaoIA} 
-                  variant="ghost" 
+                <Button
+                  type="button"
+                  onClick={handleSugerirDescricaoIA}
+                  variant="ghost"
                   size="sm"
-                  disabled={!tarefaEditando.titulo || sugerindoDescricao}
-                  leftIcon={<IconeFiscal className="w-4 h-4" />} 
+                  disabled={!tarefaEditando.titulo || sugerindoDescricao || !genAI}
+                  leftIcon={<IconeFiscal className="w-4 h-4" />}
                 >
                   {sugerindoDescricao ? 'Sugerindo...' : 'Sugerir Descrição (IA)'}
                 </Button>
               </div>
               <textarea name="descricao" id="descricao" rows={4} value={tarefaEditando.descricao || ''} onChange={handleChangeTarefaEditando} className={`mt-1 block w-full ${inputStyles}`}></textarea>
             </div>
-            
+
             {podeGerenciarRecorrenciaEClientes && (
                 <>
                     <div>
@@ -632,16 +662,16 @@ const TarefasPage: React.FC = () => {
       )}
 
         {modalSelecionarDocumentoAberto && (
-            <Modal 
-                isOpen={modalSelecionarDocumentoAberto} 
-                onClose={() => setModalSelecionarDocumentoAberto(false)} 
+            <Modal
+                isOpen={modalSelecionarDocumentoAberto}
+                onClose={() => setModalSelecionarDocumentoAberto(false)}
                 title="Selecionar Documentos para Vincular"
             >
                 <div className="max-h-60 overflow-y-auto space-y-2 mb-4 p-1">
                     {documentosDoTenantParaSelecao.length > 0 ? documentosDoTenantParaSelecao.map(doc => (
                         <div key={doc.id} className="flex items-center p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 border dark:border-gray-600">
-                            <input 
-                                type="checkbox" 
+                            <input
+                                type="checkbox"
                                 id={`doc-sel-${doc.id}`}
                                 checked={documentosSelecionadosTemporariamente.includes(doc.id)}
                                 onChange={() => handleToggleDocumentoSelecionado(doc.id)}
@@ -659,11 +689,11 @@ const TarefasPage: React.FC = () => {
                 </div>
             </Modal>
         )}
-        
+
         {modalDetalhesDocVinculadoAberto && documentoParaDetalhes && (
-            <Modal 
-                isOpen={modalDetalhesDocVinculadoAberto} 
-                onClose={() => { setModalDetalhesDocVinculadoAberto(false); setDocumentoParaDetalhes(null); }} 
+            <Modal
+                isOpen={modalDetalhesDocVinculadoAberto}
+                onClose={() => { setModalDetalhesDocVinculadoAberto(false); setDocumentoParaDetalhes(null); }}
                 title="Detalhes do Documento Vinculado"
             >
             <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300">
@@ -677,8 +707,8 @@ const TarefasPage: React.FC = () => {
                 )}
             </div>
             <div className="mt-6 text-right space-x-2">
-                <Button 
-                variant="secondary" 
+                <Button
+                variant="secondary"
                 onClick={() => alert(`Simulando abertura/download do documento "${documentoParaDetalhes.nome}"...`)}
                 >
                 Abrir/Baixar (Simulado)

@@ -1,6 +1,7 @@
 
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
-import { Usuario, FuncaoUsuario, Tenant, ConfiguracoesEmissor, Empresa, PersonificacaoInfo, AuthContextType as IAuthContextType, Theme, ConfiguracoesVisuais, ModuloConfigs } from '../types'; // Adicionado ConfiguracoesVisuais, ModuloConfigs
+import { Usuario, FuncaoUsuario, Tenant, ConfiguracoesEmissor, Empresa, PersonificacaoInfo, AuthContextType as IAuthContextType, Theme, ConfiguracoesVisuais, ModuloConfigs, TipoAcaoAuditoria, ModuloSistemaAuditavel } from '../types'; // Adicionado ConfiguracoesVisuais, ModuloConfigs
+import { logAction } from '../services/LogService'; // Importar LogService
 
 // Chaves do localStorage
 const USER_STORAGE_KEY = 'usuarioAtual';
@@ -89,7 +90,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             configuracoesEmissor: parsedTenant.configuracoesEmissor || {},
             usuariosDoTenant: parsedTenant.usuariosDoTenant || [],
             configuracoesVisuais: parsedTenant.configuracoesVisuais || {},
-            configuracoesModulos: parsedTenant.configuracoesModulos || {}, // Inicializa configuracoesModulos
+            configuracoesModulos: parsedTenant.configuracoesModulos || {}, 
           };
 
           setUsuarioAtual(parsedUser);
@@ -106,7 +107,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         }
       } catch (error) {
-        console.error("Falha ao carregar dados do localStorage:", error);
+        console.error("AuthContext: Falha ao carregar dados do localStorage no useEffect inicial:", error);
         localStorage.removeItem(USER_STORAGE_KEY);
         localStorage.removeItem(TENANT_STORAGE_KEY);
         localStorage.removeItem(PERSONIFICATION_INFO_KEY);
@@ -129,6 +130,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [theme]);
 
   const login = async (email: string, senha_mock: string) => {
+    console.log("AuthContext: Tentativa de login com email:", email);
     setIsLoading(true);
     localStorage.removeItem(PERSONIFICATION_INFO_KEY);
     localStorage.removeItem(ORIGINAL_USER_KEY);
@@ -137,12 +139,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setUsuarioOriginal(null);
     setActiveClientCompanyContext(null); 
 
-    // Senha padrão para todos os usuários mock
     const SENHA_PADRAO_MOCK = "ProjetoTeste123+";
+    console.log("AuthContext: Senha fornecida:", senha_mock);
+    console.log("AuthContext: Senha esperada:", SENHA_PADRAO_MOCK);
+    console.log("AuthContext: Comparação de senhas:", senha_mock === SENHA_PADRAO_MOCK);
+
 
     return new Promise<void>((resolve, reject) => {
       setTimeout(() => {
         if (email && senha_mock === SENHA_PADRAO_MOCK) { 
+          console.log("AuthContext: Login bem-sucedido (bloco if).");
           const mockUserId = `user-${Date.now()}`;
           const mockEscritorioTenantId = `tenant-escritorio-principal-mock`; 
           
@@ -163,7 +169,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             }
           }
 
-
           const usuarioMock: Usuario = {
             id: mockUserId,
             nome: email.split('@')[0] || 'Usuário Mock',
@@ -181,16 +186,33 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             configuracoesEmissor: {},
             usuariosDoTenant: funcaoUsuario !== FuncaoUsuario.USUARIO_EXTERNO_CLIENTE ? [ {...usuarioMock} ] : [], 
             configuracoesVisuais: {},
-            configuracoesModulos: {}, // Inicializa configuracoesModulos
+            configuracoesModulos: {}, 
           };
 
           setUsuarioAtual(usuarioMock);
           setTenantAtual(tenantEscritorioMock);
           localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(usuarioMock));
           localStorage.setItem(TENANT_STORAGE_KEY, JSON.stringify(tenantEscritorioMock));
+          
+          logAction({
+            acao: TipoAcaoAuditoria.LOGIN_SUCESSO,
+            modulo: ModuloSistemaAuditavel.AUTENTICACAO,
+            descricao: `Usuário ${usuarioMock.email} logado com sucesso.`,
+            tenantId: tenantEscritorioMock.id,
+            usuario: usuarioMock
+          });
+
           setIsLoading(false);
           resolve();
         } else {
+          console.log("AuthContext: Login falhou (bloco else).");
+          logAction({ 
+            acao: TipoAcaoAuditoria.LOGIN_FALHA,
+            modulo: ModuloSistemaAuditavel.AUTENTICACAO,
+            descricao: `Tentativa de login falhou para o email: ${email}.`,
+            tenantId: 'tenant-desconhecido-login-falha', 
+            usuarioEmail: email
+          });
           setIsLoading(false);
           reject(new Error('Credenciais inválidas. Verifique seu e-mail e senha.'));
         }
@@ -200,6 +222,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const logout = () => {
     setIsLoading(true);
+    if (tenantAtual && usuarioAtual) {
+        logAction({
+            acao: TipoAcaoAuditoria.LOGOUT,
+            modulo: ModuloSistemaAuditavel.AUTENTICACAO,
+            descricao: `Usuário ${usuarioAtual.email} deslogado.`,
+            tenantId: tenantAtual.id, 
+            usuario: usuarioAtual
+          });
+    }
     setUsuarioAtual(null);
     setTenantAtual(null);
     setPersonificandoInfo(null);
@@ -317,12 +348,33 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
     setUsuarioAtual(usuarioPersonificado);
     localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(usuarioPersonificado));
+
+    logAction({
+        acao: TipoAcaoAuditoria.PERSONIFICACAO_INICIO,
+        modulo: ModuloSistemaAuditavel.AUTENTICACAO,
+        descricao: `Iniciou personificação da empresa ${empresa.nome} (ID: ${empresa.id}). Papel personificado: ${papelFinalPersonificado}.`,
+        tenantId: tenantAtual.id, 
+        usuario: originalUser, 
+        contextoEmpresaClienteId: empresa.id,
+        contextoEmpresaClienteNome: empresa.nome,
+        dadosNovos: { personificandoInfo: personInfo }
+    });
     
     setIsLoading(false); 
   };
 
   const pararPersonificacao = () => {
-    if (usuarioOriginal) {
+    if (usuarioOriginal && tenantAtual) {
+        logAction({
+            acao: TipoAcaoAuditoria.PERSONIFICACAO_FIM,
+            modulo: ModuloSistemaAuditavel.AUTENTICACAO,
+            descricao: `Parou personificação. Retornou ao usuário original.`,
+            tenantId: tenantAtual.id, 
+            usuario: usuarioOriginal,
+            contextoEmpresaClienteId: personificandoInfo?.empresaId,
+            contextoEmpresaClienteNome: personificandoInfo?.empresaNome,
+            dadosAntigos: { personificandoInfo }
+          });
         setUsuarioAtual(usuarioOriginal);
         localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(usuarioOriginal));
     }
@@ -345,7 +397,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const switchActiveClientCompanyContext = (empresa: Empresa | null) => {
-    if (usuarioAtual && (usuarioAtual.funcao === FuncaoUsuario.ADMIN_ESCRITORIO || usuarioAtual.funcao === FuncaoUsuario.SUPERADMIN)) {
+    if (usuarioAtual && tenantAtual && (usuarioAtual.funcao === FuncaoUsuario.ADMIN_ESCRITORIO || usuarioAtual.funcao === FuncaoUsuario.SUPERADMIN)) {
         if (personificandoInfo) {
             console.warn("Não é possível trocar o contexto de empresa cliente enquanto estiver personificando. Pare a personificação primeiro.");
             return;
@@ -356,6 +408,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         } else {
             localStorage.removeItem(ACTIVE_CLIENT_COMPANY_CONTEXT_KEY);
         }
+
+        logAction({
+            acao: TipoAcaoAuditoria.CONTEXTO_CLIENTE_TROCA,
+            modulo: ModuloSistemaAuditavel.CONFIGURACOES_GERAIS_PLATAFORMA,
+            descricao: empresa ? `Mudou contexto para visualizar empresa cliente: ${empresa.nome} (ID: ${empresa.id}).` : "Retornou ao contexto do escritório.",
+            tenantId: tenantAtual.id, 
+            usuario: usuarioAtual,
+            contextoEmpresaClienteId: empresa?.id,
+            contextoEmpresaClienteNome: empresa?.nome,
+            dadosNovos: { activeClientCompanyContext: empresa }
+        });
+
         setIsLoading(false); 
     } else {
         console.warn("switchActiveClientCompanyContext chamado para usuário não autorizado.");
@@ -377,7 +441,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setTenantConfiguracoesEmissor, 
         salvarUsuariosDoTenant,
         setTenantVisualConfigs,
-        setTenantConfiguracoesModulos, // Exporta a nova função
+        setTenantConfiguracoesModulos, 
         personificandoInfo,
         iniciarPersonificacao,
         pararPersonificacao,

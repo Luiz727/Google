@@ -37,6 +37,7 @@ import LalurPage from '../pages/LalurPage';
 import ConsultoriaTributariaPage from '../pages/ConsultoriaTributariaPage';
 import CnaePage from '../pages/CnaePage';
 import IntegraContadorAdminPage from '../pages/IntegraContadorAdminPage'; // Nova página IntegraContador
+import ImpostometroPage from '../pages/ImpostometroPage'; // Nova página Impostômetro
 
 interface ProtectedRouteProps {
   children?: ReactNode;
@@ -98,6 +99,7 @@ const AppRouter: React.FC = () => {
           <Route path="consultoria-tributaria" element={<ConsultoriaTributariaPage />} />
           <Route path="cadastro-cnaes" element={<CnaePage />} />
           <Route path="integracontador-admin" element={<IntegraContadorAdminPage />} /> {/* Nova rota IntegraContador */}
+          <Route path="impostometro" element={<ImpostometroPage />} /> {/* Nova rota Impostômetro */}
           <Route path="notificacoes" element={<NotificacoesPage />} />
           <Route path="configuracoes" element={<ConfiguracoesPage />} />
           <Route path="auditoria" element={<AuditoriaPage />} />

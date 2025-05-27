@@ -224,6 +224,12 @@ export const ITENS_MENU_LATERAL: ItemNavegacao[] = [
         icone: IconePontoProdutividade, 
         funcoesPermitidas: [FuncaoUsuario.ADMIN_ESCRITORIO, FuncaoUsuario.USUARIO_ESCRITORIO], 
       },
+      {
+        nome: 'Impostômetro Brasil',
+        caminho: '/impostometro',
+        icone: IconeFinanceiro, // Reutilizando ícone
+        funcoesPermitidas: Object.values(FuncaoUsuario) 
+      },
     ]
   },
   { 
