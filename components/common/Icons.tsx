@@ -291,3 +291,9 @@ export const IconeSerpro = (props: React.SVGProps<SVGSVGElement>) => (
     <path strokeLinecap="round" strokeLinejoin="round" d="M12 9.75A2.25 2.25 0 0114.25 12H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25a2.25 2.25 0 01-2.25-2.25V16.5M12 9.75A2.25 2.25 0 009.75 12H6a2.25 2.25 0 00-2.25 2.25V18A2.25 2.25 0 006 20.25h2.25A2.25 2.25 0 0010.5 18v-1.5" />
   </svg>
 );
+
+export const IconeSparkles = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L1.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.25 7.5l.813 2.846a4.5 4.5 0 003.09 3.09L25.0001 12l-2.846.813a4.5 4.5 0 00-3.09 3.09L18.25 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L11.5001 12l2.846-.813a4.5 4.5 0 003.09-3.09L18.25 7.5z" />
+  </svg>
+);

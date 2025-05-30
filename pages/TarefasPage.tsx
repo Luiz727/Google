@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, ChangeEvent, FormEvent } from 'rea
 import Card from '../components/common/Card';
 import Button from '../components/common/Button';
 import Modal from '../components/common/Modal';
-import { IconeTarefas, IconeFiscal, IconeDocumentos, IconeEmpresa, IconeLixeira, IconeLink } from '../components/common/Icons';
+import { IconeTarefas, IconeSparkles, IconeDocumentos, IconeEmpresa, IconeLixeira, IconeLink } from '../components/common/Icons';
 import {
     Tarefa, PrioridadeTarefa, StatusTarefa, Usuario, FuncaoUsuario, Empresa,
     RecorrenciaConfig, DocumentoVinculado, TiposRecorrencia, DIAS_SEMANA_MAP, MESES_MAP, Documento,
@@ -12,7 +12,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { logAction } from '../services/LogService';
 import { STORAGE_KEY_DOCUMENTOS_PREFIX } from './DocumentosPage';
-import { GoogleGenerativeAI, GenerateContentResponse } from "@google/genai"; // Updated import
+import { GoogleGenerativeAI as GoogleGenAI, GenerateContentResponse } from "@google/genai";
 
 const usuariosMock: Pick<Usuario, 'id' | 'nome'>[] = [
   { id: 'user-ana', nome: 'Ana Silva (Escritório)' },
@@ -31,9 +31,9 @@ const checkboxLabelStyles = "ml-2 block text-sm text-gray-700 dark:text-gray-300
 
 // Initialize Gemini API
 const API_KEY = process.env.API_KEY;
-let genAI: GoogleGenerativeAI | null = null; // Updated type and variable name
+let ai: GoogleGenAI | null = null; 
 if (API_KEY) {
-  genAI = new GoogleGenerativeAI({ apiKey: API_KEY }); // Updated instantiation
+  ai = new GoogleGenAI({ apiKey: API_KEY }); 
 } else {
   console.warn("API Key for Gemini not found. AI features will be limited.");
 }
@@ -46,6 +46,8 @@ const TarefasPage: React.FC = () => {
   const [tarefaEditando, setTarefaEditando] = useState<Partial<Tarefa> | null>(null);
   const [tarefaOriginalParaLog, setTarefaOriginalParaLog] = useState<Tarefa | null>(null);
   const [sugerindoDescricao, setSugerindoDescricao] = useState(false);
+  const [sugestaoErro, setSugestaoErro] = useState<string | null>(null);
+
 
   const [documentosDoTenantParaSelecao, setDocumentosDoTenantParaSelecao] = useState<Documento[]>([]);
   const [modalSelecionarDocumentoAberto, setModalSelecionarDocumentoAberto] = useState(false);
@@ -95,6 +97,7 @@ const TarefasPage: React.FC = () => {
   }, [usuarioAtual, personificandoInfo, activeClientCompanyContext]);
 
   const handleAbrirModalTarefa = (tarefa?: Tarefa) => {
+    setSugestaoErro(null); // Limpa erro de sugestão ao abrir modal
     let tenantIdAtualVisualizado = effectiveTenantId;
     let clienteIdPreSelecionado: string | undefined = undefined;
     let clienteNomePreSelecionado: string | undefined = undefined;
@@ -150,6 +153,7 @@ const TarefasPage: React.FC = () => {
     setTarefaEditando(null);
     setTarefaOriginalParaLog(null);
     setSugerindoDescricao(false);
+    setSugestaoErro(null); // Limpa erro ao fechar
     setModalSelecionarDocumentoAberto(false);
     setDocumentosSelecionadosTemporariamente([]);
   };
@@ -341,23 +345,25 @@ const TarefasPage: React.FC = () => {
 
   const handleSugerirDescricaoIA = async () => {
     if (!tarefaEditando || !tarefaEditando.titulo) {
-      alert("Por favor, insira um título para a tarefa primeiro.");
+      setSugestaoErro("Por favor, insira um título para a tarefa primeiro.");
       return;
     }
-    if (!genAI) { // Use genAI here
-      alert("A funcionalidade de IA não está disponível. Verifique a configuração da API Key.");
+    if (!ai) { 
+      setSugestaoErro("A funcionalidade de IA não está disponível. Verifique a configuração da API Key.");
       return;
     }
 
     setSugerindoDescricao(true);
+    setSugestaoErro(null);
     try {
       const prompt = `Crie uma descrição detalhada para uma tarefa contábil com o título: "${tarefaEditando.titulo}". A descrição deve ser útil para um profissional de contabilidade e incluir sugestões de pontos-chave a considerar para a execução completa da tarefa, como documentos necessários, prazos típicos (se aplicável), e principais verificações a serem feitas. Formate a resposta de forma clara e organizada, usando tópicos se apropriado.`;
-
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-preview-04-17" });
-      const result = await model.generateContent(prompt);
-      const genResponse = result.response; // GenerateContentResponse
-
-      const suggestedDescription = genResponse.text;
+      
+      const result: GenerateContentResponse = await ai.models.generateContent({
+        model: "gemini-2.5-flash-preview-04-17",
+        contents: prompt,
+      });
+      
+      const suggestedDescription = result.text;
       setTarefaEditando(prev => prev ? { ...prev, descricao: suggestedDescription } : null);
 
     } catch (error) {
@@ -366,7 +372,7 @@ const TarefasPage: React.FC = () => {
        if (error instanceof Error) {
         errorMessage += ` Detalhe: ${error.message}`;
       }
-      alert(errorMessage);
+      setSugestaoErro(errorMessage);
     } finally {
       setSugerindoDescricao(false);
     }
@@ -534,13 +540,14 @@ const TarefasPage: React.FC = () => {
                   onClick={handleSugerirDescricaoIA}
                   variant="ghost"
                   size="sm"
-                  disabled={!tarefaEditando.titulo || sugerindoDescricao || !genAI}
-                  leftIcon={<IconeFiscal className="w-4 h-4" />}
+                  disabled={!tarefaEditando.titulo || sugerindoDescricao || !ai}
+                  leftIcon={sugerindoDescricao ? <IconeSparkles className="w-4 h-4 animate-pulse" /> : <IconeSparkles className="w-4 h-4" />}
                 >
                   {sugerindoDescricao ? 'Sugerindo...' : 'Sugerir Descrição (IA)'}
                 </Button>
               </div>
               <textarea name="descricao" id="descricao" rows={4} value={tarefaEditando.descricao || ''} onChange={handleChangeTarefaEditando} className={`mt-1 block w-full ${inputStyles}`}></textarea>
+              {sugestaoErro && <p className="text-xs text-red-500 mt-1">{sugestaoErro}</p>}
             </div>
 
             {podeGerenciarRecorrenciaEClientes && (
@@ -723,3 +730,19 @@ const TarefasPage: React.FC = () => {
 };
 
 export default TarefasPage;
+
+<style>
+{`
+.animate-pulse {
+  animation: pulse 1.5s infinite;
+}
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: .5;
+  }
+}
+`}
+</style>
