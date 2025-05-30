@@ -1,0 +1,25 @@
+# Configurações de Exemplo do Projeto Supabase (Simulado)
+
+Após a criação (simulada) de um projeto no Supabase, estas seriam as informações de conexão fornecidas:
+
+## URL do Projeto (Project URL)
+O endereço principal para acessar os serviços do seu projeto Supabase.
+
+Exemplo:
+`https://abcdefghijklmnop.supabase.co`
+
+## Chave de API Anônima (API Key - anon public)
+Esta chave é pública e pode ser usada no lado do cliente (navegador, aplicativos móveis) para acessar o Supabase de forma anônima ou em nome de um usuário logado. Ela permite o acesso de acordo com as Regras de Segurança de Nível de Linha (RLS) que você definir no seu banco de dados.
+
+Exemplo:
+`eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeo_CvXAcAFUhAlapA21_H_m_CtBC171_P0`
+
+## Chave de API de Serviço (API Key - service_role secret)
+Esta chave é secreta e NUNCA deve ser exposta no lado do cliente ou em código público. Ela possui privilégios de superusuário e pode contornar todas as Regras de Segurança de Nível de Linha (RLS). Deve ser usada apenas no backend (servidor) para tarefas administrativas ou operações que exigem acesso total aos dados.
+
+Exemplo:
+`eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.CRXP1A7WOeo_CvXAcAFUhAlapA21_H_m_CtBC171_P0`
+(Nota: Para este exemplo, a chave de serviço é similar à anônima, mas em um projeto real do Supabase, ela seria diferente, significativamente mais longa e única.)
+
+**Lembre-se de substituir estes valores de exemplo pelas chaves reais do seu projeto Supabase quando estiver configurando uma aplicação real.**
+**Guarde suas chaves de API, especialmente a chave de serviço, em local seguro e nunca as compartilhe publicamente.**
