@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import authRoutes from './authRoutes';
 import tenantRoutes from './tenantRoutes';
-import empresaRoutes from './empresaRoutes'; // Importar as rotas de empresas
+import empresaRoutes from './empresaRoutes';
+import tarefaRoutes from './tarefaRoutes';
+import documentoRoutes from './documentoRoutes';
+import produtoRoutes from './produtoRoutes'; // Importar as rotas de produtos
 
 const router = Router();
 
@@ -17,11 +20,16 @@ router.use('/auth', authRoutes);
 router.use('/tenants', tenantRoutes);
 
 // Rotas de Empresas
-router.use('/empresas', empresaRoutes); // Adicionar as rotas de empresas sob o prefixo /empresas
+router.use('/empresas', empresaRoutes);
 
+// Rotas de Tarefas
+router.use('/tarefas', tarefaRoutes);
 
-// Exemplo de como adicionar outras rotas no futuro:
-// import productRoutes from './productRoutes';
-// router.use('/products', productRoutes);
+// Rotas de Documentos
+router.use('/documentos', documentoRoutes);
+
+// Rotas de Produtos
+router.use('/produtos', produtoRoutes); // Adicionar as rotas de produtos sob o prefixo /produtos
+
 
 export default router;
